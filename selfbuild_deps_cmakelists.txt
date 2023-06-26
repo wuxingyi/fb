@@ -86,7 +86,7 @@ endif()
 ExternalProject_Add(spdk
   #SOURCE_DIR /home/seastar-spdk/spdk
   # SOURCE_DIR /home/spdk
-  GIT_REPOSITORY  https://github.com/YifangSun/spdk.git
+  GIT_REPOSITORY  https://ghproxy.com/https://github.com/YifangSun/spdk.git
   GIT_TAG v22.05.x-kv
   BUILD_IN_SOURCE ON
   INSTALL_DIR    @FASTBLOCK_DEPS_INSTALL_DIR@

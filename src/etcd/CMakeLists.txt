@@ -9,10 +9,6 @@ add_library(etcdapi
     rpc.grpc.pb.cc
     rpc.pb.cc)
 
-target_include_directories(etcdapi
-  PRIVATE
-    src)
-
 target_link_libraries(etcdapi
   PRIVATE
     # We do not want the gRPC libraries publicly declared
