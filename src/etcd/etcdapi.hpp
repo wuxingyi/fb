@@ -214,10 +214,6 @@ namespace etcdapi
 
   std::shared_ptr<v3_client_t> create_v3_client(const std::string &address);
 
-  using watch_stream =
-      std::unique_ptr<grpc::ClientAsyncReaderWriter<etcdserverpb::WatchRequest,
-                                                    etcdserverpb::WatchResponse>>;
-
   struct listener_t
   {
     OnKeyAddedFunc onKeyAdded;
@@ -259,7 +255,9 @@ namespace etcdapi
           watch_id(-1),
           on_create(std::move(on_create)) {}
   };
-
+  using watch_stream =
+      std::unique_ptr<grpc::ClientAsyncReaderWriter<etcdserverpb::WatchRequest,
+                                                    etcdserverpb::WatchResponse>>;
   class watcher
   {
   private:

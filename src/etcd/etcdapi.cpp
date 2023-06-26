@@ -399,7 +399,6 @@ bool watcher::Start() {
   }
 
   _watchStub = etcdserverpb::Watch::NewStub(_channel);
-  //_watch_completion_queue = grpc::CompletionQueue();
   _watch_stream =
       _watchStub->AsyncWatch(&_watch_context, &_watch_completion_queue,
                              reinterpret_cast<void*>(watch_type_e::Start));
