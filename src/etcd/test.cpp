@@ -3,25 +3,25 @@
 
 #include "etcdapi.h"
 
-using namespace Etcd;
+using namespace etcdapi;
 static constexpr const char* kAddress = "http://127.0.0.1:2379";
 
 int main(int argc, char** argv) {
-  auto client = Client_Create(kAddress);
+  auto client = create_v3_client(kAddress);
 
-  Etcd::StatusCode code;
+  etcdapi::status_code_e code;
 
-  code = client->Put("asdf", "asdfasdf2", 0);
-  assert(code == Etcd::StatusCode::Ok);
-  auto v = client->Get("asdf");
-  assert(v.IsOk());
+  code = client->kv_put("asdf", "asdfasdf2", 0);
+  assert(code == etcdapi::status_code_e::OK);
+  auto v = client->kv_get("asdf");
+  assert(v.is_ok());
   std::cout << v.value << std::endl;
 
-  auto d = client->Delete("asdf");
-  assert(d == Etcd::StatusCode::Ok);
+  auto d = client->kv_delete("asdf");
+  assert(d == etcdapi::status_code_e::OK);
 
-  v = client->Get("asdf");
-  assert(!v.IsOk());
+  v = client->kv_get("asdf");
+  assert(!v.is_ok());
 
   return 0;
 }

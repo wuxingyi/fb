@@ -13,17 +13,7 @@
 #include <grpc++/channel.h>
 #include <grpc++/grpc++.h>
 
-static const char* kStatusCodeNames[] = {
-#define ETCD_STATUS_CODE(e, s) s
-    ETCD_STATUS_CODES
-#undef ETCD_STATUS_CODE
-};
-
-const char* Etcd::StatusCodeStr(StatusCode code) {
-  return kStatusCodeNames[static_cast<int>(code)];
-}
-
-std::shared_ptr<grpc::Channel> MakeChannel(
+std::shared_ptr<grpc::Channel> make_channel(
     const std::string& address,
     const std::shared_ptr<grpc::ChannelCredentials>& channelCredentials) {
   const std::string substr("://");
@@ -35,37 +25,38 @@ std::shared_ptr<grpc::Channel> MakeChannel(
   return grpc::CreateChannel(stripped_address, channelCredentials);
 }
 
-Etcd::Client::Client(const std::string& address) {
-  this->_channel = MakeChannel(address, grpc::InsecureChannelCredentials());
+etcdapi::v3_client_t::v3_client_t(const std::string& address) {
+  this->_channel = make_channel(address, grpc::InsecureChannelCredentials());
   this->_kvStub = etcdserverpb::KV::NewStub(_channel);
-  this->_watcher = std::unique_ptr<Watcher>(new Watcher(std::move(_channel)));
+  this->_watcher = std::unique_ptr<watcher>(new watcher(std::move(_channel)));
   // this->_leaseStub = etcdserverpb::Lease::NewStub(_channel);
 }
 
-Etcd::Client::~Client() { _watcher->Stop(); }
+etcdapi::v3_client_t::~v3_client_t() { _watcher->Stop(); }
 
-Etcd::StatusCode Etcd::Client::Put(const std::string& key,
-                                   const std::string& value,
-                                   Etcd::LeaseId leaseId) {
-  etcdserverpb::PutRequest putRequest;
-  putRequest.set_key(key);
-  putRequest.set_value(value);
-  putRequest.set_lease(leaseId);
-  putRequest.set_prev_kv(false);
+etcdapi::status_code_e etcdapi::v3_client_t::kv_put(const std::string& key,
+                                                    const std::string& value,
+                                                    etcdapi::leaseid_t lid) {
+  etcdserverpb::PutRequest pr;
+  pr.set_key(key);
+  pr.set_value(value);
+  pr.set_lease(lid);
+  pr.set_prev_kv(false);
 
-  etcdserverpb::PutResponse putResponse;
+  etcdserverpb::PutResponse presponse;
 
   grpc::ClientContext context;
-  grpc::Status status = _kvStub->Put(&context, putRequest, &putResponse);
+  grpc::Status status = _kvStub->Put(&context, pr, &presponse);
 
   if (!status.ok()) {
-    return (Etcd::StatusCode)status.error_code();
+    return (etcdapi::status_code_e)status.error_code();
   }
 
-  return Etcd::StatusCode::Ok;
+  return etcdapi::status_code_e::OK;
 }
 
-Etcd::LeaseGrantResponse Etcd::Client::LeaseGrant(std::chrono::seconds ttl) {
+etcdapi::lease_grant_response_t etcdapi::v3_client_t::lease_grant(
+    std::chrono::seconds ttl) {
   etcdserverpb::LeaseGrantRequest req;
   req.set_ttl(ttl.count());
   etcdserverpb::LeaseGrantResponse res;
@@ -74,20 +65,21 @@ Etcd::LeaseGrantResponse Etcd::Client::LeaseGrant(std::chrono::seconds ttl) {
   grpc::Status status = _leaseStub->LeaseGrant(&context, req, &res);
 
   if (!status.ok()) {
-    auto ret =
-        Etcd::LeaseGrantResponse((Etcd::StatusCode)status.error_code(),
-                                 res.id(), std::chrono::seconds(res.ttl()));
+    auto ret = etcdapi::lease_grant_response_t(
+        (etcdapi::status_code_e)status.error_code(), res.id(),
+        std::chrono::seconds(res.ttl()));
 
     return ret;
   }
 
-  return Etcd::LeaseGrantResponse(Etcd::StatusCode::Ok, res.id(),
-                                  std::chrono::seconds(res.ttl()));
+  return etcdapi::lease_grant_response_t(etcdapi::status_code_e::OK, res.id(),
+                                         std::chrono::seconds(res.ttl()));
 }
 
-Etcd::StatusCode Etcd::Client::LeaseRevoke(Etcd::LeaseId leaseId) {
+etcdapi::status_code_e etcdapi::v3_client_t::lease_revoke(
+    etcdapi::leaseid_t lid) {
   etcdserverpb::LeaseRevokeRequest req;
-  req.set_id(leaseId);
+  req.set_id(lid);
 
   etcdserverpb::LeaseRevokeResponse res;
 
@@ -95,14 +87,15 @@ Etcd::StatusCode Etcd::Client::LeaseRevoke(Etcd::LeaseId leaseId) {
   grpc::Status status = _leaseStub->LeaseRevoke(&context, req, &res);
 
   if (!status.ok()) {
-    auto ret = (Etcd::StatusCode)status.error_code();
+    auto ret = (etcdapi::status_code_e)status.error_code();
     return ret;
   }
 
-  return Etcd::StatusCode::Ok;
+  return etcdapi::status_code_e::OK;
 }
 
-Etcd::GetResponse Etcd::Client::Get(const std::string& key) {
+etcdapi::kv_range_response_t etcdapi::v3_client_t::kv_get(
+    const std::string& key) {
   etcdserverpb::RangeRequest req;
   req.set_key(key);
 
@@ -111,21 +104,21 @@ Etcd::GetResponse Etcd::Client::Get(const std::string& key) {
   grpc::ClientContext context;
   grpc::Status status = _kvStub->Range(&context, req, &res);
 
-  auto statusCode = (Etcd::StatusCode)status.error_code();
+  auto statusCode = (etcdapi::status_code_e)status.error_code();
 
   if (!status.ok()) {
-    Etcd::GetResponse ret(statusCode);
+    etcdapi::kv_range_response_t ret(statusCode);
     return ret;
   }
 
   if (res.count() == 0) {
-    return Etcd::GetResponse(Etcd::StatusCode::NotFound);
+    return etcdapi::kv_range_response_t(etcdapi::status_code_e::NOT_FOUND);
   }
 
-  return Etcd::GetResponse(statusCode, res.kvs(0).value());
+  return etcdapi::kv_range_response_t(statusCode, res.kvs(0).value());
 }
 
-Etcd::StatusCode Etcd::Client::Delete(const std::string& key) {
+etcdapi::status_code_e etcdapi::v3_client_t::kv_delete(const std::string& key) {
   etcdserverpb::DeleteRangeRequest req;
   req.set_key(key);
   req.set_prev_kv(false);
@@ -136,14 +129,15 @@ Etcd::StatusCode Etcd::Client::Delete(const std::string& key) {
   grpc::Status status = _kvStub->DeleteRange(&context, req, &res);
 
   if (!status.ok()) {
-    auto ret = (Etcd::StatusCode)status.error_code();
+    auto ret = (etcdapi::status_code_e)status.error_code();
     return ret;
   }
 
-  return Etcd::StatusCode::Ok;
+  return etcdapi::status_code_e::OK;
 }
 
-Etcd::ListResponse Etcd::Client::List(const std::string& keyPrefix) {
+etcdapi::kv_list_response_t etcdapi::v3_client_t::kv_list(
+    const std::string& keyPrefix) {
   etcdserverpb::RangeRequest req;
   req.set_key(keyPrefix);
 
@@ -152,14 +146,14 @@ Etcd::ListResponse Etcd::Client::List(const std::string& keyPrefix) {
   grpc::ClientContext context;
   grpc::Status status = _kvStub->Range(&context, req, &res);
 
-  auto statusCode = (Etcd::StatusCode)status.error_code();
+  auto statusCode = (etcdapi::status_code_e)status.error_code();
 
   if (!status.ok()) {
-    Etcd::ListResponse ret(statusCode);
+    etcdapi::kv_list_response_t ret(statusCode);
     return ret;
   }
 
-  Etcd::ListResponse::KeyValuePairs kvs;
+  etcdapi::kv_list_response_t::kv_pairs kvs;
   kvs.reserve(res.count());
 
   for (int i = 0; i < res.count(); ++i) {
@@ -167,49 +161,51 @@ Etcd::ListResponse Etcd::Client::List(const std::string& keyPrefix) {
     kvs.push_back(std::make_pair(kv.key(), kv.value()));
   }
 
-  return Etcd::ListResponse(statusCode, std::move(kvs));
+  return etcdapi::kv_list_response_t(statusCode, std::move(kvs));
 }
 
-bool Etcd::Client::StartWatch() { return _watcher->Start(); }
+bool etcdapi::v3_client_t::StartWatch() { return _watcher->Start(); }
 
-void Etcd::Client::StopWatch() { _watcher->Stop(); }
+void etcdapi::v3_client_t::StopWatch() { _watcher->Stop(); }
 
-bool Etcd::Client::AddWatchPrefix(const std::string& prefix,
-                                  Etcd::OnKeyAddedFunc onKeyAdded,
-                                  Etcd::OnKeyRemovedFunc onKeyRemoved) {
-  return _watcher->AddPrefix(prefix, std::move(onKeyAdded),
-                             std::move(onKeyRemoved));
+bool etcdapi::v3_client_t::AddWatchPrefix(
+    const std::string& prefix, etcdapi::OnKeyAddedFunc onKeyAdded,
+    etcdapi::OnKeyRemovedFunc onKeyRemoved) {
+  return _watcher->add_prefix(prefix, std::move(onKeyAdded),
+                              std::move(onKeyRemoved));
 }
 
-bool Etcd::Client::RemoveWatchPrefix(const std::string& prefix) {
-  return _watcher->RemovePrefix(prefix);
+bool etcdapi::v3_client_t::RemoveWatchPrefix(const std::string& prefix) {
+  return _watcher->remove_prefix(prefix);
 }
 
-std::shared_ptr<Etcd::Client> Etcd::Client_Create(const std::string& address) {
-  return std::make_shared<Client>(address);
+std::shared_ptr<etcdapi::v3_client_t> etcdapi::create_v3_client(
+    const std::string& address) {
+  return std::make_shared<v3_client_t>(address);
 }
 
-namespace Etcd {
-void Watcher::Stop() {
+namespace etcdapi {
+void watcher::Stop() {
   using namespace std::chrono;
-  if (!_threadRunning.load()) {
+  if (!_thread_running.load()) {
     return;
   }
 
-  _watchContext.TryCancel();
+  _watch_context.TryCancel();
 
-  _watchCompletionQueue.Shutdown();
-  if (_watchThread.joinable()) {
-    _watchThread.join();
+  _watch_completion_queue.Shutdown();
+  if (_watch_thread.joinable()) {
+    _watch_thread.join();
   }
   this->_watchStub = nullptr;
 }
 
-WatchData* Watcher::FindCreatedWatchWithLock(int64_t watchId) {
-  std::lock_guard<decltype(_watchThreadMutex)> lock(_watchThreadMutex);
-  auto it = std::find_if(
-      _createdWatches.begin(), _createdWatches.end(),
-      [=](const WatchData* data) -> bool { return data->watchId == watchId; });
+watch_data* watcher::find_created_watch_withlock(int64_t watch_id) {
+  std::lock_guard<decltype(_watch_thread_mutex)> lock(_watch_thread_mutex);
+  auto it = std::find_if(_createdWatches.begin(), _createdWatches.end(),
+                         [=](const watch_data* data) -> bool {
+                           return data->watch_id == watch_id;
+                         });
   if (it == _createdWatches.end()) {
     return nullptr;
   } else {
@@ -217,13 +213,13 @@ WatchData* Watcher::FindCreatedWatchWithLock(int64_t watchId) {
   }
 }
 
-void Watcher::Thread_Start() {
+void watcher::Thread_Start() {
   using namespace std::chrono;
 
   for (;;) {
     void* tag;
     bool ok;
-    if (!_watchCompletionQueue.Next(&tag, &ok)) {
+    if (!_watch_completion_queue.Next(&tag, &ok)) {
       break;
     }
 
@@ -231,44 +227,46 @@ void Watcher::Thread_Start() {
     // Now we see what type it is, process it and then delete the struct.
 
     if (!ok) {
-      _watchContext.TryCancel();
-      _watchCompletionQueue.Shutdown();
+      _watch_context.TryCancel();
+      _watch_completion_queue.Shutdown();
       continue;
     }
 
-    WatchData* watchData = reinterpret_cast<WatchData*>(tag);
+    watch_data* watchData = reinterpret_cast<watch_data*>(tag);
 
     switch (watchData->tag) {
-      case WatchTag::Create: {
+      case watch_type_e::Create: {
         // The watch is not created yet, since the server has to confirm
         // the creation. Therefore we place the watch data into a pending
         // queue.
-        _pendingWatchCreateData = watchData;
+        _pending_watch_create_data = watchData;
         break;
       }
-      case WatchTag::Cancel: {
+      case watch_type_e::Cancel: {
         break;
       }
-      case WatchTag::Read: {
+      case watch_type_e::Read: {
         if (_watchResponse.created()) {
-          _pendingWatchCreateData->watchId = _watchResponse.watch_id();
+          _pending_watch_create_data->watch_id = _watchResponse.watch_id();
 
-          _pendingWatchCreateData->onCreate();
-          _pendingWatchCreateData->onCreate = nullptr;
+          _pending_watch_create_data->on_create();
+          _pending_watch_create_data->on_create = nullptr;
 
-          std::lock_guard<decltype(_watchThreadMutex)> lock(_watchThreadMutex);
-          _createdWatches.push_back(_pendingWatchCreateData);
-          _pendingWatchCreateData = nullptr;
+          std::lock_guard<decltype(_watch_thread_mutex)> lock(
+              _watch_thread_mutex);
+          _createdWatches.push_back(_pending_watch_create_data);
+          _pending_watch_create_data = nullptr;
         } else if (_watchResponse.canceled()) {
-          assert(_pendingWatchCancelData->watchId == _watchResponse.watch_id());
+          assert(_pending_watch_cancel_data->watch_id ==
+                 _watchResponse.watch_id());
 
-          _pendingWatchCancelData->onCancel();
-          delete _pendingWatchCancelData;
-          _pendingWatchCancelData = nullptr;
+          _pending_watch_cancel_data->on_cancel();
+          delete _pending_watch_cancel_data;
+          _pending_watch_cancel_data = nullptr;
         } else {
           auto events = _watchResponse.events();
           auto createdWatchData =
-              FindCreatedWatchWithLock(_watchResponse.watch_id());
+              find_created_watch_withlock(_watchResponse.watch_id());
 
           // Loop over all events and call the respective listener
           for (const auto& ev : events) {
@@ -282,7 +280,7 @@ void Watcher::Thread_Start() {
         }
 
         // We read again from the server after we got a message.
-        _watchStream->Read(&_watchResponse, watchData);
+        _watch_stream->Read(&_watchResponse, watchData);
         break;
       }
       default: {
@@ -291,10 +289,10 @@ void Watcher::Thread_Start() {
     }
   }
 
-  _threadRunning.store(false);
+  _thread_running.store(false);
 }
 
-bool Watcher::CreateWatch(const std::string& prefix, Listener listener) {
+bool watcher::CreateWatch(const std::string& prefix, listener_t listener) {
   using namespace etcdserverpb;
   // We get the rangeEnd. We currently always treat the key as a prefix.
   std::string rangeEnd(prefix);
@@ -315,10 +313,10 @@ bool Watcher::CreateWatch(const std::string& prefix, Listener listener) {
   std::future<bool> createFuture = createPromise->get_future();
 
   auto watchData =
-      new WatchData(WatchTag::Create, prefix, std::move(listener),
-                    [createPromise]() { createPromise->set_value(true); });
+      new watch_data(watch_type_e::Create, prefix, std::move(listener),
+                     [createPromise]() { createPromise->set_value(true); });
 
-  _watchStream->Write(req, watchData);
+  _watch_stream->Write(req, watchData);
 
   auto status = createFuture.wait_for(std::chrono::seconds(1));
   if (status == std::future_status::timeout) {
@@ -328,19 +326,19 @@ bool Watcher::CreateWatch(const std::string& prefix, Listener listener) {
   return true;
 }
 
-bool Watcher::CancelWatch(const std::string& prefix) {
+bool watcher::CancelWatch(const std::string& prefix) {
   using namespace etcdserverpb;
 
   // First we try to remove the prefix from the created watches map
   {
-    std::lock_guard<decltype(_watchThreadMutex)> lock(_watchThreadMutex);
+    std::lock_guard<decltype(_watch_thread_mutex)> lock(_watch_thread_mutex);
     auto it = std::find_if(
         _createdWatches.begin(), _createdWatches.end(),
-        [&](const WatchData* data) -> bool { return data->prefix == prefix; });
+        [&](const watch_data* data) -> bool { return data->prefix == prefix; });
     if (it == _createdWatches.end()) {
       return false;
     }
-    _pendingWatchCancelData = *it;
+    _pending_watch_cancel_data = *it;
     _createdWatches.erase(it);
   }
 
@@ -349,16 +347,16 @@ bool Watcher::CancelWatch(const std::string& prefix) {
 
   // We change the current tag to cancel, otherwise we will not know
   // what to do once we get the struct from the completion queue.
-  _pendingWatchCancelData->tag = WatchTag::Cancel;
-  _pendingWatchCancelData->onCancel = [=]() { cancelPromise->set_value(); };
+  _pending_watch_cancel_data->tag = watch_type_e::Cancel;
+  _pending_watch_cancel_data->on_cancel = [=]() { cancelPromise->set_value(); };
 
   auto cancelReq = new WatchCancelRequest();
-  cancelReq->set_watch_id(_pendingWatchCancelData->watchId);
+  cancelReq->set_watch_id(_pending_watch_cancel_data->watch_id);
 
   WatchRequest req;
   req.set_allocated_cancel_request(cancelReq);
 
-  _watchStream->Write(req, _pendingWatchCancelData);
+  _watch_stream->Write(req, _pending_watch_cancel_data);
 
   auto status = cancelFuture.wait_for(std::chrono::seconds(1));
   if (status == std::future_status::timeout) {
@@ -368,25 +366,25 @@ bool Watcher::CancelWatch(const std::string& prefix) {
   return true;
 }
 
-bool Watcher::AddPrefix(const std::string& prefix,
-                        Etcd::OnKeyAddedFunc onKeyAdded,
-                        Etcd::OnKeyRemovedFunc onKeyRemoved) {
-  if (!this->_threadRunning.load()) {
+bool watcher::add_prefix(const std::string& prefix,
+                         etcdapi::OnKeyAddedFunc onKeyAdded,
+                         etcdapi::OnKeyRemovedFunc onKeyRemoved) {
+  if (!this->_thread_running.load()) {
     return false;
   }
-  Listener listener(std::move(onKeyAdded), std::move(onKeyRemoved));
+  listener_t listener(std::move(onKeyAdded), std::move(onKeyRemoved));
   return CreateWatch(prefix, std::move(listener));
 }
 
-bool Watcher::RemovePrefix(const std::string& prefix) {
-  if (!this->_threadRunning.load()) {
+bool watcher::remove_prefix(const std::string& prefix) {
+  if (!this->_thread_running.load()) {
     return false;
   }
   return CancelWatch(prefix);
 }
 
-bool Watcher::Start() {
-  if (_threadRunning.load()) {
+bool watcher::Start() {
+  if (_thread_running.load()) {
     return false;
   }
 
@@ -396,14 +394,14 @@ bool Watcher::Start() {
   }
 
   _watchStub = etcdserverpb::Watch::NewStub(_channel);
-  //_watchCompletionQueue = grpc::CompletionQueue();
-  _watchStream =
-      _watchStub->AsyncWatch(&_watchContext, &_watchCompletionQueue,
-                             reinterpret_cast<void*>(WatchTag::Start));
+  //_watch_completion_queue = grpc::CompletionQueue();
+  _watch_stream =
+      _watchStub->AsyncWatch(&_watch_context, &_watch_completion_queue,
+                             reinterpret_cast<void*>(watch_type_e::Start));
 
   bool ok;
   void* tag;
-  if (!_watchCompletionQueue.Next(&tag, &ok)) {
+  if (!_watch_completion_queue.Next(&tag, &ok)) {
     return false;
   }
 
@@ -412,12 +410,12 @@ bool Watcher::Start() {
   }
 
   // Start reading from the watch stream
-  auto watchData = new WatchData(WatchTag::Read);
-  _watchStream->Read(&_watchResponse, static_cast<void*>(watchData));
+  auto watchData = new watch_data(watch_type_e::Read);
+  _watch_stream->Read(&_watchResponse, static_cast<void*>(watchData));
 
-  _threadRunning.store(true);
-  _watchThread = std::thread(std::bind(&Watcher::Thread_Start, this));
+  _thread_running.store(true);
+  _watch_thread = std::thread(std::bind(&watcher::Thread_Start, this));
   return true;
 }
 
-}  // namespace Etcd
+}  // namespace etcdapi
