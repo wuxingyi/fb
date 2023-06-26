@@ -1,0 +1,17 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "method": "bdev_aio_create",
+          "params": {
+            "name": "sdd",
+            "filename": "/dev/sdd",
+            "block_size": 512
+          }
+        }
+      ]
+    }
+  ]
+}

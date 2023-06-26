@@ -1,0 +1,10 @@
+CMakeCache.txt
+CMakeFiles/
+Makefile
+src/echo
+src/CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+.vscode
+build/
+*.pyc
