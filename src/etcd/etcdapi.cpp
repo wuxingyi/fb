@@ -1,4 +1,4 @@
-#include "etcdapi.h"
+#include "etcdapi.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -104,10 +104,10 @@ etcdapi::kv_range_response_t etcdapi::v3_client_t::kv_get(
   grpc::ClientContext context;
   grpc::Status status = _kvStub->Range(&context, req, &res);
 
-  auto statusCode = (etcdapi::status_code_e)status.error_code();
+  auto status_code = (etcdapi::status_code_e)status.error_code();
 
   if (!status.ok()) {
-    etcdapi::kv_range_response_t ret(statusCode);
+    etcdapi::kv_range_response_t ret(status_code);
     return ret;
   }
 
@@ -115,7 +115,7 @@ etcdapi::kv_range_response_t etcdapi::v3_client_t::kv_get(
     return etcdapi::kv_range_response_t(etcdapi::status_code_e::NOT_FOUND);
   }
 
-  return etcdapi::kv_range_response_t(statusCode, res.kvs(0).value());
+  return etcdapi::kv_range_response_t(status_code, res.kvs(0).value());
 }
 
 etcdapi::status_code_e etcdapi::v3_client_t::kv_delete(const std::string& key) {
@@ -146,10 +146,10 @@ etcdapi::kv_list_response_t etcdapi::v3_client_t::kv_list(
   grpc::ClientContext context;
   grpc::Status status = _kvStub->Range(&context, req, &res);
 
-  auto statusCode = (etcdapi::status_code_e)status.error_code();
+  auto status_code = (etcdapi::status_code_e)status.error_code();
 
   if (!status.ok()) {
-    etcdapi::kv_list_response_t ret(statusCode);
+    etcdapi::kv_list_response_t ret(status_code);
     return ret;
   }
 
@@ -161,7 +161,7 @@ etcdapi::kv_list_response_t etcdapi::v3_client_t::kv_list(
     kvs.push_back(std::make_pair(kv.key(), kv.value()));
   }
 
-  return etcdapi::kv_list_response_t(statusCode, std::move(kvs));
+  return etcdapi::kv_list_response_t(status_code, std::move(kvs));
 }
 
 bool etcdapi::v3_client_t::StartWatch() { return _watcher->Start(); }

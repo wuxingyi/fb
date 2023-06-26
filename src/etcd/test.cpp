@@ -1,7 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "etcdapi.h"
+#include "etcdapi.hpp"
 
 using namespace etcdapi;
 static constexpr const char* kAddress = "http://127.0.0.1:2379";
