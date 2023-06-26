@@ -209,7 +209,7 @@ namespace etcdapi
     std::shared_ptr<grpc::Channel> _channel;
     std::shared_ptr<etcdserverpb::KV::Stub> _kvStub;
     std::shared_ptr<etcdserverpb::Lease::Stub> _leaseStub;
-    std::unique_ptr<etcdapi::watcher> _watcher;
+    std::unique_ptr<watcher> _watcher;
   };
 
   std::shared_ptr<v3_client_t> create_v3_client(const std::string &address);
@@ -220,13 +220,13 @@ namespace etcdapi
 
   struct listener_t
   {
-    etcdapi::OnKeyAddedFunc onKeyAdded;
-    etcdapi::OnKeyRemovedFunc onKeyRemoved;
+    OnKeyAddedFunc onKeyAdded;
+    OnKeyRemovedFunc onKeyRemoved;
 
     listener_t() = default;
 
-    listener_t(etcdapi::OnKeyAddedFunc onKeyAdded,
-               etcdapi::OnKeyRemovedFunc onKeyRemoved)
+    listener_t(OnKeyAddedFunc onKeyAdded,
+               OnKeyRemovedFunc onKeyRemoved)
         : onKeyAdded(std::move(onKeyAdded)),
           onKeyRemoved(std::move(onKeyRemoved)) {}
   };
@@ -276,8 +276,8 @@ namespace etcdapi
 
     ~watcher() = default;
     void Stop();
-    bool add_prefix(const std::string &prefix, etcdapi::OnKeyAddedFunc onKeyAdded,
-                    etcdapi::OnKeyRemovedFunc onKeyRemoved);
+    bool add_prefix(const std::string &prefix, OnKeyAddedFunc onKeyAdded,
+                    OnKeyRemovedFunc onKeyRemoved);
     bool remove_prefix(const std::string &prefix);
 
     static std::unique_ptr<watcher> Create(

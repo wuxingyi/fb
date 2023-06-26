@@ -13,205 +13,234 @@
 #include <grpc++/channel.h>
 #include <grpc++/grpc++.h>
 
-std::shared_ptr<grpc::Channel> make_channel(
-    const std::string& address,
-    const std::shared_ptr<grpc::ChannelCredentials>& channelCredentials) {
-  const std::string substr("://");
-  const auto i = address.find(substr);
-  if (i == std::string::npos) {
-    return grpc::CreateChannel(address, channelCredentials);
-  }
-  const std::string stripped_address = address.substr(i + substr.length());
-  return grpc::CreateChannel(stripped_address, channelCredentials);
-}
-
-etcdapi::v3_client_t::v3_client_t(const std::string& address) {
-  this->_channel = make_channel(address, grpc::InsecureChannelCredentials());
-  this->_kvStub = etcdserverpb::KV::NewStub(_channel);
-  this->_leaseStub = etcdserverpb::Lease::NewStub(_channel);
-  this->_watcher = std::unique_ptr<watcher>(new watcher(std::move(_channel)));
-}
-
-etcdapi::v3_client_t::~v3_client_t() { _watcher->Stop(); }
-
-etcdapi::status_code_e etcdapi::v3_client_t::kv_put(const std::string& key,
-                                                    const std::string& value,
-                                                    etcdapi::leaseid_t lid) {
-  etcdserverpb::PutRequest pr;
-  pr.set_key(key);
-  pr.set_value(value);
-  pr.set_lease(lid);
-  pr.set_prev_kv(false);
-
-  etcdserverpb::PutResponse presponse;
-
-  grpc::ClientContext context;
-  grpc::Status status = _kvStub->Put(&context, pr, &presponse);
-
-  if (!status.ok()) {
-    return (etcdapi::status_code_e)status.error_code();
+namespace etcdapi
+{
+  std::shared_ptr<grpc::Channel> make_channel(
+      const std::string &address,
+      const std::shared_ptr<grpc::ChannelCredentials> &channelCredentials)
+  {
+    const std::string substr("://");
+    const auto i = address.find(substr);
+    if (i == std::string::npos)
+    {
+      return grpc::CreateChannel(address, channelCredentials);
+    }
+    const std::string stripped_address = address.substr(i + substr.length());
+    return grpc::CreateChannel(stripped_address, channelCredentials);
   }
 
-  return etcdapi::status_code_e::OK;
-}
-
-etcdapi::lease_grant_response_t etcdapi::v3_client_t::lease_grant(
-    std::chrono::seconds ttl) {
-  etcdserverpb::LeaseGrantRequest req;
-  req.set_ttl(ttl.count());
-  etcdserverpb::LeaseGrantResponse res;
-
-  grpc::ClientContext context;
-  grpc::Status status = _leaseStub->LeaseGrant(&context, req, &res);
-
-  if (!status.ok()) {
-    auto ret = etcdapi::lease_grant_response_t(
-        (etcdapi::status_code_e)status.error_code(), res.id(),
-        std::chrono::seconds(res.ttl()));
-
-    return ret;
+  v3_client_t::v3_client_t(const std::string &address)
+  {
+    this->_channel = make_channel(address, grpc::InsecureChannelCredentials());
+    this->_kvStub = etcdserverpb::KV::NewStub(_channel);
+    this->_leaseStub = etcdserverpb::Lease::NewStub(_channel);
+    this->_watcher = std::unique_ptr<watcher>(new watcher(std::move(_channel)));
   }
 
-  return etcdapi::lease_grant_response_t(etcdapi::status_code_e::OK, res.id(),
-                                         std::chrono::seconds(res.ttl()));
-}
+  v3_client_t::~v3_client_t() { _watcher->Stop(); }
 
-etcdapi::status_code_e etcdapi::v3_client_t::lease_revoke(
-    etcdapi::leaseid_t lid) {
-  etcdserverpb::LeaseRevokeRequest req;
-  req.set_id(lid);
+  status_code_e v3_client_t::kv_put(const std::string &key,
+                                    const std::string &value,
+                                    leaseid_t lid)
+  {
+    etcdserverpb::PutRequest pr;
+    pr.set_key(key);
+    pr.set_value(value);
+    pr.set_lease(lid);
+    pr.set_prev_kv(false);
 
-  etcdserverpb::LeaseRevokeResponse res;
+    etcdserverpb::PutResponse presponse;
 
-  grpc::ClientContext context;
-  grpc::Status status = _leaseStub->LeaseRevoke(&context, req, &res);
+    grpc::ClientContext context;
+    grpc::Status status = _kvStub->Put(&context, pr, &presponse);
 
-  if (!status.ok()) {
-    auto ret = (etcdapi::status_code_e)status.error_code();
-    return ret;
+    if (!status.ok())
+    {
+      return (status_code_e)status.error_code();
+    }
+
+    return status_code_e::OK;
   }
 
-  return etcdapi::status_code_e::OK;
-}
+  lease_grant_response_t v3_client_t::lease_grant(
+      std::chrono::seconds ttl)
+  {
+    etcdserverpb::LeaseGrantRequest req;
+    req.set_ttl(ttl.count());
+    etcdserverpb::LeaseGrantResponse res;
 
-etcdapi::kv_range_response_t etcdapi::v3_client_t::kv_get(
-    const std::string& key) {
-  etcdserverpb::RangeRequest req;
-  req.set_key(key);
+    grpc::ClientContext context;
+    grpc::Status status = _leaseStub->LeaseGrant(&context, req, &res);
 
-  etcdserverpb::RangeResponse res;
+    if (!status.ok())
+    {
+      auto ret = lease_grant_response_t(
+          (status_code_e)status.error_code(), res.id(),
+          std::chrono::seconds(res.ttl()));
 
-  grpc::ClientContext context;
-  grpc::Status status = _kvStub->Range(&context, req, &res);
+      return ret;
+    }
 
-  auto status_code = (etcdapi::status_code_e)status.error_code();
-
-  if (!status.ok()) {
-    etcdapi::kv_range_response_t ret(status_code);
-    return ret;
+    return lease_grant_response_t(status_code_e::OK, res.id(),
+                                  std::chrono::seconds(res.ttl()));
   }
 
-  if (res.count() == 0) {
-    return etcdapi::kv_range_response_t(etcdapi::status_code_e::NOT_FOUND);
+  status_code_e v3_client_t::lease_revoke(
+      leaseid_t lid)
+  {
+    etcdserverpb::LeaseRevokeRequest req;
+    req.set_id(lid);
+
+    etcdserverpb::LeaseRevokeResponse res;
+
+    grpc::ClientContext context;
+    grpc::Status status = _leaseStub->LeaseRevoke(&context, req, &res);
+
+    if (!status.ok())
+    {
+      auto ret = (status_code_e)status.error_code();
+      return ret;
+    }
+
+    return status_code_e::OK;
   }
 
-  return etcdapi::kv_range_response_t(status_code, res.kvs(0).value());
-}
+  kv_range_response_t v3_client_t::kv_get(
+      const std::string &key)
+  {
+    etcdserverpb::RangeRequest req;
+    req.set_key(key);
 
-etcdapi::status_code_e etcdapi::v3_client_t::kv_delete(const std::string& key) {
-  etcdserverpb::DeleteRangeRequest req;
-  req.set_key(key);
-  req.set_prev_kv(false);
+    etcdserverpb::RangeResponse res;
 
-  etcdserverpb::DeleteRangeResponse res;
+    grpc::ClientContext context;
+    grpc::Status status = _kvStub->Range(&context, req, &res);
 
-  grpc::ClientContext context;
-  grpc::Status status = _kvStub->DeleteRange(&context, req, &res);
+    auto status_code = (status_code_e)status.error_code();
 
-  if (!status.ok()) {
-    auto ret = (etcdapi::status_code_e)status.error_code();
-    return ret;
+    if (!status.ok())
+    {
+      kv_range_response_t ret(status_code);
+      return ret;
+    }
+
+    if (res.count() == 0)
+    {
+      return kv_range_response_t(status_code_e::NOT_FOUND);
+    }
+
+    return kv_range_response_t(status_code, res.kvs(0).value());
   }
 
-  return etcdapi::status_code_e::OK;
-}
+  status_code_e v3_client_t::kv_delete(const std::string &key)
+  {
+    etcdserverpb::DeleteRangeRequest req;
+    req.set_key(key);
+    req.set_prev_kv(false);
 
-etcdapi::kv_list_response_t etcdapi::v3_client_t::kv_list(
-    const std::string& keyPrefix) {
-  etcdserverpb::RangeRequest req;
-  req.set_key(keyPrefix);
+    etcdserverpb::DeleteRangeResponse res;
 
-  etcdserverpb::RangeResponse res;
+    grpc::ClientContext context;
+    grpc::Status status = _kvStub->DeleteRange(&context, req, &res);
 
-  grpc::ClientContext context;
-  grpc::Status status = _kvStub->Range(&context, req, &res);
+    if (!status.ok())
+    {
+      auto ret = (status_code_e)status.error_code();
+      return ret;
+    }
 
-  auto status_code = (etcdapi::status_code_e)status.error_code();
-
-  if (!status.ok()) {
-    etcdapi::kv_list_response_t ret(status_code);
-    return ret;
+    return status_code_e::OK;
   }
 
-  etcdapi::kv_list_response_t::kv_pairs kvs;
-  kvs.reserve(res.count());
+  kv_list_response_t v3_client_t::kv_list(
+      const std::string &keyPrefix)
+  {
+    etcdserverpb::RangeRequest req;
+    req.set_key(keyPrefix);
 
-  for (int i = 0; i < res.count(); ++i) {
-    const auto& kv = res.kvs(i);
-    kvs.push_back(std::make_pair(kv.key(), kv.value()));
+    etcdserverpb::RangeResponse res;
+
+    grpc::ClientContext context;
+    grpc::Status status = _kvStub->Range(&context, req, &res);
+
+    auto status_code = (status_code_e)status.error_code();
+
+    if (!status.ok())
+    {
+      kv_list_response_t ret(status_code);
+      return ret;
+    }
+
+    kv_list_response_t::kv_pairs kvs;
+    kvs.reserve(res.count());
+
+    for (int i = 0; i < res.count(); ++i)
+    {
+      const auto &kv = res.kvs(i);
+      kvs.push_back(std::make_pair(kv.key(), kv.value()));
+    }
+
+    return kv_list_response_t(status_code, std::move(kvs));
   }
 
-  return etcdapi::kv_list_response_t(status_code, std::move(kvs));
-}
+  bool v3_client_t::StartWatch() { return _watcher->Start(); }
 
-bool etcdapi::v3_client_t::StartWatch() { return _watcher->Start(); }
+  void v3_client_t::StopWatch() { _watcher->Stop(); }
 
-void etcdapi::v3_client_t::StopWatch() { _watcher->Stop(); }
-
-bool etcdapi::v3_client_t::AddWatchPrefix(
-    const std::string& prefix, etcdapi::OnKeyAddedFunc onKeyAdded,
-    etcdapi::OnKeyRemovedFunc onKeyRemoved) {
-  return _watcher->add_prefix(prefix, std::move(onKeyAdded),
-                              std::move(onKeyRemoved));
-}
-
-bool etcdapi::v3_client_t::RemoveWatchPrefix(const std::string& prefix) {
-  return _watcher->remove_prefix(prefix);
-}
-
-std::shared_ptr<etcdapi::v3_client_t> etcdapi::create_v3_client(
-    const std::string& address) {
-  return std::make_shared<v3_client_t>(address);
-}
-
-namespace etcdapi {
-void watcher::Stop() {
-  using namespace std::chrono;
-  if (!_thread_running.load()) {
-    return;
+  bool v3_client_t::AddWatchPrefix(
+      const std::string &prefix, OnKeyAddedFunc onKeyAdded,
+      OnKeyRemovedFunc onKeyRemoved)
+  {
+    return _watcher->add_prefix(prefix, std::move(onKeyAdded),
+                                std::move(onKeyRemoved));
   }
 
-  _watch_context.TryCancel();
-
-  _watch_completion_queue.Shutdown();
-  if (_watch_thread.joinable()) {
-    _watch_thread.join();
+  bool v3_client_t::RemoveWatchPrefix(const std::string &prefix)
+  {
+    return _watcher->remove_prefix(prefix);
   }
-  this->_watchStub = nullptr;
-}
 
-watch_data* watcher::find_created_watch_withlock(int64_t watch_id) {
-  std::lock_guard<decltype(_watch_thread_mutex)> lock(_watch_thread_mutex);
-  auto it = std::find_if(_createdWatches.begin(), _createdWatches.end(),
-                         [=](const watch_data* data) -> bool {
-                           return data->watch_id == watch_id;
-                         });
-  if (it == _createdWatches.end()) {
-    return nullptr;
-  } else {
-    return *it;
+  std::shared_ptr<v3_client_t> create_v3_client(
+      const std::string &address)
+  {
+    return std::make_shared<v3_client_t>(address);
   }
-}
+
+  void watcher::Stop()
+  {
+    using namespace std::chrono;
+    if (!_thread_running.load())
+    {
+      return;
+    }
+
+    _watch_context.TryCancel();
+
+    _watch_completion_queue.Shutdown();
+    if (_watch_thread.joinable())
+    {
+      _watch_thread.join();
+    }
+    this->_watchStub = nullptr;
+  }
+
+  watch_data *watcher::find_created_watch_withlock(int64_t watch_id)
+  {
+    std::lock_guard<decltype(_watch_thread_mutex)> lock(_watch_thread_mutex);
+    auto it = std::find_if(_createdWatches.begin(), _createdWatches.end(),
+                           [=](const watch_data *data) -> bool
+                           {
+                             return data->watch_id == watch_id;
+                           });
+    if (it == _createdWatches.end())
+    {
+      return nullptr;
+    }
+    else
+    {
+      return *it;
+    }
+  }
 
 void watcher::Thread_Start() {
   using namespace std::chrono;
@@ -366,9 +395,10 @@ bool watcher::CancelWatch(const std::string& prefix) {
   return true;
 }
 
-bool watcher::add_prefix(const std::string& prefix,
-                         etcdapi::OnKeyAddedFunc onKeyAdded,
-                         etcdapi::OnKeyRemovedFunc onKeyRemoved) {
+bool watcher::add_prefix(const std::string &prefix,
+                         OnKeyAddedFunc onKeyAdded,
+                         OnKeyRemovedFunc onKeyRemoved)
+{
   if (!this->_thread_running.load()) {
     return false;
   }
@@ -418,4 +448,4 @@ bool watcher::Start() {
   return true;
 }
 
-}  // namespace etcdapi
+} // namespace etcdapi
