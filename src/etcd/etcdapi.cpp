@@ -28,8 +28,8 @@ std::shared_ptr<grpc::Channel> make_channel(
 etcdapi::v3_client_t::v3_client_t(const std::string& address) {
   this->_channel = make_channel(address, grpc::InsecureChannelCredentials());
   this->_kvStub = etcdserverpb::KV::NewStub(_channel);
+  this->_leaseStub = etcdserverpb::Lease::NewStub(_channel);
   this->_watcher = std::unique_ptr<watcher>(new watcher(std::move(_channel)));
-  // this->_leaseStub = etcdserverpb::Lease::NewStub(_channel);
 }
 
 etcdapi::v3_client_t::~v3_client_t() { _watcher->Stop(); }
