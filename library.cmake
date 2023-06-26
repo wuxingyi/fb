@@ -2,7 +2,7 @@ include(CMakeParseArguments)
 
 set(CXX_STANDARD 20)
 set(DEFAULT_LINKOPTS)
-set(DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers)
+set(DEFAULT_COPTS -Wall -Wextra -Wno-missing-field-initializers)
 set(COMMON_INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/src/")
 function(compile_library)
@@ -13,7 +13,7 @@ function(compile_library)
     ${ARGN}
     )
 
-  set(_NAME "fblock_${CC_LIB_NAME}")
+  set(_NAME "fastblock_${CC_LIB_NAME}")
 
   # Check if this is a header-only library
   # Note that as of February 2019, many popular OS's (for example, Ubuntu
@@ -34,8 +34,6 @@ function(compile_library)
   if(NOT CC_LIB_IS_INTERFACE)
     # CMake creates static libraries in anything non Debug mode.
     if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-      # TODO - enable once we fix seastar scalability exception hack
-      # add_library(${_NAME} SHARED "")
       add_library(${_NAME} "")
     else()
       # allow override on the command line for -DBUILD_SHARED_LIBS=ON
