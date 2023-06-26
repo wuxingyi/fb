@@ -54,12 +54,7 @@ namespace etcdapi
     grpc::ClientContext context;
     grpc::Status status = _kvStub->Put(&context, pr, &presponse);
 
-    if (!status.ok())
-    {
-      return (status_code_e)status.error_code();
-    }
-
-    return status_code_e::OK;
+    return (status_code_e)status.error_code();
   }
 
   lease_grant_response_t v3_client_t::lease_grant(
@@ -72,17 +67,9 @@ namespace etcdapi
     grpc::ClientContext context;
     grpc::Status status = _leaseStub->LeaseGrant(&context, req, &res);
 
-    if (!status.ok())
-    {
-      auto ret = lease_grant_response_t(
-          (status_code_e)status.error_code(), res.id(),
-          std::chrono::seconds(res.ttl()));
-
-      return ret;
-    }
-
-    return lease_grant_response_t(status_code_e::OK, res.id(),
-                                  std::chrono::seconds(res.ttl()));
+    return lease_grant_response_t(
+        (status_code_e)status.error_code(), res.id(),
+        std::chrono::seconds(res.ttl()));
   }
 
   status_code_e v3_client_t::lease_revoke(
@@ -96,13 +83,7 @@ namespace etcdapi
     grpc::ClientContext context;
     grpc::Status status = _leaseStub->LeaseRevoke(&context, req, &res);
 
-    if (!status.ok())
-    {
-      auto ret = (status_code_e)status.error_code();
-      return ret;
-    }
-
-    return status_code_e::OK;
+    return (status_code_e)status.error_code();
   }
 
   kv_range_response_t v3_client_t::kv_get(
@@ -143,13 +124,7 @@ namespace etcdapi
     grpc::ClientContext context;
     grpc::Status status = _kvStub->DeleteRange(&context, req, &res);
 
-    if (!status.ok())
-    {
-      auto ret = (status_code_e)status.error_code();
-      return ret;
-    }
-
-    return status_code_e::OK;
+    return (status_code_e)status.error_code();
   }
 
   kv_list_response_t v3_client_t::kv_list(
